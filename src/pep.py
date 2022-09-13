@@ -35,7 +35,7 @@ class PowerEPGP:
 
         # Likelihood-dependent terms for q(f)
         # If q(f) = Normal(mf, Vf)...
-        # mf = Kfu @ Ku.inv() @ (Ku.inv() + T2.sum(axis=-1)).inv() @ T1
+        # mf = Kfu @ Ku.inv() @ (Ku.inv() + T2.sum(axis=0)).inv() @ T1
         #    = Kfu @ self.gamma
         self.gamma = torch.zeros(self.m, 1, requires_grad=False)
 
