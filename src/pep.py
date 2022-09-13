@@ -16,45 +16,59 @@ class PowerEPGP:
     ):
         self.train_x = train_x
         self.train_y = train_y
-        self.kernel = kernel
+        self.kernel = kernel.base_kernel
+        self.inducing_points = kernel.inducing_points
         self.likelihood = likelihood
         self.quadrature = gpytorch.utils.quadrature.GaussHermiteQuadrature1D(100)
 
         self.n = len(self.train_x)
-        self.m = len(self.kernel.inducing_points)
+        self.m = len(self.inducing_points)
 
         self.alpha = alpha
+
+        # Parameters of q(u)
+        # If the natural parameters of q(u) are T1 and T2, then, t_i(u) = z_i * exp(u.T @ T1[i] - 0.5 u.T @ T2[i] @ u)
+        # but, optimally, T2[i] is a rank-1 matrix... (Bui et al 2017, Appendix F.1)
+        # so, t_i(u) = z_i * Normal(Kfi_u @ Ku.inv() @ u| self.g[i], self.v[i])
         self.g = torch.zeros(self.n, 1, requires_grad=False)
         self.v = torch.ones(self.n, 1, requires_grad=False) * inf
+
+        # Likelihood-dependent terms for q(f)
+        # If q(f) = Normal(mf, Vf)...
+        # mf = Kfu @ Ku.inv() @ (Ku.inv() + T2.sum(axis=-1)).inv() @ T1
+        #    = Kfu @ self.gamma
         self.gamma = torch.zeros(self.m, 1, requires_grad=False)
+
+        # Vf = Kf - Kfu @ (Ku.inv() - (Ku @ T2 @ Ku).inv()) @ Kfu.T
+        #    = Kf - Kfu @ self.beta @ Kfu.T
         self.beta = torch.zeros(self.m, self.m, requires_grad=False)
 
-    def posterior_f(self, test_x=None) -> gpytorch.distributions.MultivariateNormal:
+    def posterior_f(self, test_x=None, jitter=0.0) -> gpytorch.distributions.MultivariateNormal:
         if test_x is None:
             test_x = self.train_x
 
         Kf = self.kernel(test_x).evaluate()
-        Kfu = self.kernel(test_x, self.kernel.inducing_points).evaluate()
+        Kfu = self.kernel(test_x, self.inducing_points).evaluate()
         return gpytorch.distributions.MultivariateNormal(
             (Kfu @ self.gamma).view(-1),
-            Kf.subtract(Kfu @ self.beta @ Kfu.T),
+            Kf.subtract(Kfu @ self.beta @ Kfu.T) + jitter * torch.eye(len(test_x)),
         )
 
-    def posterior_u(self) -> gpytorch.distributions.MultivariateNormal:
-        Ku = self.kernel(self.kernel.inducing_points)
+    def posterior_u(self, jitter=0.0) -> gpytorch.distributions.MultivariateNormal:
+        Ku = self.kernel(self.inducing_points)
         Ku = Ku.evaluate()
         return gpytorch.distributions.MultivariateNormal(
             (Ku @ self.gamma).view(-1),
-            Ku.subtract(Ku @ self.beta @ Ku),
+            Ku.subtract(Ku @ self.beta @ Ku) + jitter * torch.eye(self.m),
         )
 
     def iterate_pep(self):
         """Run one step of PEP sequentially for all training points"""
         with torch.no_grad():
-            Ku = self.kernel(self.kernel.inducing_points)
+            Ku = self.kernel(self.inducing_points)
             chol_Ku = Ku.cholesky().evaluate()
             Kf = self.kernel(self.train_x).diag()
-            Kfu = self.kernel(self.train_x, self.kernel.inducing_points).evaluate()
+            Kfu = self.kernel(self.train_x, self.inducing_points).evaluate()
             KuKuf = torch.cholesky_solve(Kfu.T, chol_Ku)
 
             for i in range(len(self.train_x)):
@@ -185,10 +199,10 @@ class PowerEPGP:
         assert isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood)
         with torch.no_grad():
             Kf = self.kernel(self.train_x).evaluate()
-            Ku = self.kernel(self.kernel.inducing_points)
+            Ku = self.kernel(self.inducing_points)
             chol_Ku = Ku.cholesky().evaluate()
             Ku = Ku.evaluate()
-            Kfu = self.kernel(self.train_x, self.kernel.inducing_points).evaluate()
+            Kfu = self.kernel(self.train_x, self.inducing_points).evaluate()
             KuKuf = torch.cholesky_solve(Kfu.T, chol_Ku)
 
             Qf = Kfu @ KuKuf
@@ -206,8 +220,8 @@ class PowerEPGP:
         assert isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood)
         with torch.no_grad():
             Kf = self.kernel(self.train_x).evaluate()
-            Kfu = self.kernel(self.train_x, self.kernel.inducing_points).evaluate()
-            Ku = self.kernel(self.kernel.inducing_points)
+            Kfu = self.kernel(self.train_x, self.inducing_points).evaluate()
+            Ku = self.kernel(self.inducing_points)
             chol_Ku = Ku.cholesky().evaluate()
             KuKuf = torch.cholesky_solve(Kfu.T, chol_Ku)
 

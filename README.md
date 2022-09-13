@@ -12,5 +12,6 @@ This was implemented against `torch==1.10.2, gpytorch==1.7.0`.
 ## Limitations
 
 * The code does not implement hyperparameter training through gradients of the approximation of the evidence;
+* No support for non-zero prior mean;
 * No support for batched GPs;
 * No support for multi-output GPs.
