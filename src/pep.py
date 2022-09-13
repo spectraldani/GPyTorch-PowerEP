@@ -93,9 +93,9 @@ class PowerEPGP:
         #       = (Ku.inv() @ Kfi_u.T) - self.beta @ Kfi_u.T
         KuiVufi = (KuKufi) - self.beta @ Kfi_u.T  # (m,1)
         # or...
-        # KuiVufi = torch.cholesky_solve(Vfi_u.T,chol_Ku)
+        #   KuiVufi = torch.cholesky_solve(Vfi_u.T,chol_Ku)
         # where ...
-        # Vfi_u = Kfi_u - Kfi_u @ self.beta @ Ku
+        #   Vfi_u = Kfi_u - Kfi_u @ self.beta @ Ku
 
         # Compute d_2_tilde
         d2_tilde = 1 / (
@@ -127,9 +127,9 @@ class PowerEPGP:
         #                 (Ku.inv() @ Kfi_u.T) - beta_delete_i @ Kfi_u.T
         KuVufi_delete_i = (KuKufi) - beta_delete_i @ Kfi_u.T  # (m,1)
         # or...
-        # KuVufi_delete_i = torch.cholesky_solve(Vfi_u_delete_i.T,chol_Ku)
+        #   KuVufi_delete_i = torch.cholesky_solve(Vfi_u_delete_i.T,chol_Ku)
         # where...
-        # Vfi_u_delete_i = Kfi_u - Kfi_u @ beta_delete_i @ Ku
+        #   Vfi_u_delete_i = Kfi_u - Kfi_u @ beta_delete_i @ Ku
 
         mfi_delete_i = Kfi_u @ gamma_delete_i  # (1,1)
         Vfi_delete_i = Kfi - Kfi_u @ beta_delete_i @ Kfi_u.T  # (1,1)
@@ -150,11 +150,21 @@ class PowerEPGP:
         beta_updated = (beta_updated + beta_updated.T) / 2
 
         ## Update
-        #          -d1/d2 + Kfi_u @ gamma_delete_i
+        #        -d1 / d2 + (Kfi_u @ gamma_delete_i)
         gi_new = -d1 / d2 + (mfi_delete_i)
 
-        #        -1 / d2 - Vfi_u_delete_i @ Vu.inv() @ Vfi_u_delete_i.T
-        vi_new = -1 / d2 - Kfi_u @ KuVufi_delete_i
+        #        -1 / d2 - (Vfi_u_delete_i @ Vu_delete_i.inv() @ Vfi_u_delete_i.T)
+        #        -1 / d2 - [[              see derivation below                 ]]
+        #        -1 / d2 - (Kfi_u @ Ku.inv() @ Vfi_u_delete_i.T)
+        vi_new = -1 / d2 - (Kfi_u @ KuVufi_delete_i)
+        # where the derivation of the (Kfi_u @ KuVufi_delete_i) term is...
+        #   (Vfi_u_delete_i)                     @ (Vu_delete_i).inv()
+        #   (Kfi_u - Kfi_u @ beta_delete_i @ Ku) @ (Ku - Ku @ beta_delete_i @ Ku).inv()
+        #   (Kfi_u @ (I - beta_delete_i @ Ku)  ) @ (Ku @ (I - beta_delete_i @ Ku)).inv()
+        #   (Kfi_u @ (I - beta_delete_i @ Ku)  ) @ ((I - beta_delete_i @ Ku).inv() @ Ku.inv())
+        #   Kfi_u @ (I - beta_delete_i @ Ku) @ (I - beta_delete_i @ Ku).inv() @ Ku.inv()
+        #   Kfi_u @                          I                                @ Ku.inv()
+        #   Kfi_u @ Ku.inv()
 
         vi_updated = 1 / (1 / vi_new + (1 - self.alpha) / vi)
         gi_updated = vi_updated * (gi_new / vi_new + (1 - self.alpha) * gi / vi)
